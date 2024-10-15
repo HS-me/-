@@ -1,0 +1,120 @@
+﻿ ##vCenter 연결
+ Connect-VIServer -Server 172.16.11.210 -User administrator@vsphere.local -Password VMware1!
+
+
+ ##클러스터 이름 지정.*클러스터 이름* 안은 지정해야함.
+ $Cluster = Get-Cluster -name "*HA*" | Sort-Object "name"
+ 
+ foreach($ClusterOne in $Cluster)
+ {
+ 
+     ##클러스터에서 호스트들 추출.
+     $hosts = Get-Cluster -Name $ClusterOne| Get-VMHost | Sort-Object "name"
+
+    
+     ##작업 시작 check
+     $StartOperation = (Get-Date)
+           
+     ## 클러스터 전체 호스트 업그레이드
+     foreach($hostOne in $hosts){   
+            
+            
+            ##유지보수 모드일때 ESXi Upgrade 
+         if($hostOne.ConnectionState -eq "Maintenance")
+          {   
+             Write-Host "작업중인 Host:" $hostOne.Name -ForegroundColor Green        
+             Write-Host "Host Version :" $hostOne.Version   -ForegroundColor Green                      
+              
+                    
+               #태그달린 데이터스토어 명단 뽑기
+               $tagedDataStore =  Get-TagAssignment  -Category upgrade | Select-Object Entity | Sort-Object "Entity"
+               #$tagedDataStore =  Get-TagAssignment -Category upgrade |  Sort-Object "Entity"
+               $tagedDataStoredName = $tagedDataStore.Entity
+ 
+             #태그 달린 데이터스토어 명단에 있는 이름 하나 뽑기
+             foreach( $tagedOne in $tagedDataStoredName)
+             {
+                            
+                        $esxcli = $hostOne | get-esxcli -v2
+                        ##작업 할 호스트의 데이터스토어
+                        $dataStore = $hostOne | Get-Datastore        
+ 
+                ##작업할 호스트에 태그 달린 데이터스토어 이름이 포함 되어 는지 Chcek                              
+                if($dataStore.Name -contains $tagedOne.Name  )             
+               {   
+                           
+                     
+                     $dszn = $tagedOne.Name
+                     Write-host "Tag가 할당된 데이터스토어 : $dszn"
+ 
+                    ##ESXi upgrade arguments
+                     $argsInstall = $esxcli.software.profile.update.createargs()
+ 
+                     ##제조사별로 패치경로를 다르게 가저오기  
+                     $Manufacturer = $hostOne.Manufacturer
+                   
+                     #depot과 porfile은 직접 작성해야함.
+                     switch -Wildcard($Manufacturer)
+                     {                              
+                         'Lenovo*' 
+                          {   $argsInstall.depot = "/vmfs/volumes/$dszn/iso/'zipfile이름'"
+                              $argsInstall.profile = "ESXi-6.5.0-20171204001-standard" 
+                              Write-Host "Lenovo Profile"
+                              break 
+                          } 
+                         'HPE*'     
+                         {    
+                              $argsInstall.depot = "/vmfs/volumes/$dszn/iso/'zipfile이름'"
+                              $argsInstall.profile = "ESXi-6.5.0-20171204001-standard"  
+                              Write-Host "HPE Profile"
+                              break 
+                         } 
+                         'Dell*'  
+                         {    
+                              $argsInstall.depot = "/vmfs/volumes/$dszn/iso/'zipfile이름'"
+                              $argsInstall.profile = "ESXi-6.5.0-20171204001-standard" 
+                              Write-Host "Dell Profile"   
+                              break 
+                         } 
+                        'VMware*'
+                        {    
+                              $argsInstall.depot = "/vmfs/volumes/$dszn/iso/ESXi670-201912001.zip"
+                              $argsInstall.profile = "ESXi-6.7.0-20191204001-standard" 
+                              Write-Host "VMware Profile"   
+                              break 
+                        }               
+                      }     
+                  
+                      #ESXi dependancy Erorr를 무시하기 위한 옵션 값 설정.
+		      ##$argsInstall.force = $true
+			
+		      #ESXi upgrade 명령어 실행.	
+                      ##$esxcli.software.profile.update.invoke($argsInstall)
+                     
+                        Write-Host "$hostOne.Name " "작업이 완료됐습니다. Reboot 필요" -ForegroundColor Green -BackgroundColor Red  
+                        Write-Host "-------------------------------------------------"      
+                  
+                     #Rebooting 명령어 팝업창에 y를 누르면 실행.
+                     ##Restart-VMHost -VMHost $hostOne -Confirm:$true | Out-String
+                    
+                    
+               }        
+               elseif($dataStore.Name -notcontains $tagedOne.Name )
+               {
+                  Write-Host "$tagedOne 은 작업 호스트의 데이터스토어 목록에는 없습니다  $hostOne datstore목록:" $dataStore.Name 
+               }
+            } 
+         }        
+         else          
+         {
+             ##유지보수가 아닐시 유지보수모드 필요 항목
+             Write-Host "$hostOne 작업 필요 시 유지보수 모드 실행 필요합니다."  -ForegroundColor yellow -BackgroundColor Red           
+         }   
+         #작업 끝 Check
+         $EndOperation = (Get-Date) 
+         ##총 작업시간.
+         $duration = [math]::Round((New-TimeSpan -Start $StartOperation -End $EndOperation).TotalMinutes,4)
+     } 
+          Write-Host "총 작업시간:" $duration"분" -ForegroundColor green
+ }
+         

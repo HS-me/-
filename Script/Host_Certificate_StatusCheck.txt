@@ -1,0 +1,48 @@
+##vCenter 연결 
+$vCenter =  "vmw-vcsa-01.vment.kr"
+$User = "administrator@vsphere.local"
+$Password = "VMware1!" 
+Connect-VIServer -Server $vCenter -User $User -Password $Password
+
+##클러스터 이름 지정  
+$Cluster = Get-Cluster | Sort-Object "name"
+$Date = Get-Date -Format "yyyyMMdd_HHmm"
+
+##csv 파일 출력할 경로 지정         ex) C:\Users\test\Documents\PowerCLI_Script_Test\result.csv
+$csv_path = "C:\Users\ekzmd\Desktop\Test\ScriptTest\$vCenter+hostCert.csv"
+
+Write-Host ""
+$StartOperation = (Get-Date)
+foreach ($clusterOne in $Cluster) {
+        
+  ##클러스터에서 호스트 인증서 정보 추출 
+  $esx = Get-Cluster -Name $clusterOne | Get-VMHost | Sort-Object "name"
+  
+       
+  foreach ($hostOne in $esx) {   
+
+        Write-Host "$hostOne 인증서 정보 확인 중..." -ForegroundColor Green
+
+        $certMgr = Get-View -Id $hostOne.ExtensionData.ConfigManager.CertificateManager
+        New-Object -TypeName PSObject -Property ([ordered]@{ 
+        Cluster = $clusterOne
+        VMHost = $hostOne.Name
+        CertIssuer = $certMgr.CertificateInfo.Issuer
+        CertSubject = $certMgr.CertificateInfo.Subject
+        CertExpiration = $certMgr.CertificateInfo.NotAfter
+        CertStatus = $certMgr.CertificateInfo.Status
+
+        ## 해당 정보 csv 파일로 출력  
+
+        }) | Export-Csv -Path $csv_path -NoTypeInformation -UseCulture -Append 
+     }   
+}
+
+    ## 작업 완료 후
+     $EndOperation = (Get-Date)  
+     $duration = [math]::Round((New-TimeSpan -Start $StartOperation -End $EndOperation).TotalMinutes, 4)
+     Write-Host "" 
+     Write-Host "총 작업시간:" $duration"분" -ForegroundColor yellow
+     Write-Host ""
+     Write-Host "작업 완료 - 입력한 경로 통하여 csv 파일 확인할 것" -ForegroundColor yellow
+     Write-Host "입력한 경로 : $csv_path" -ForegroundColor yellow

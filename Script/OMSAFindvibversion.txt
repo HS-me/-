@@ -1,0 +1,31 @@
+Connect-VIServer 10.50.245.221  -User administrator@vsphere.local -Password VMware1!
+
+$Hosts = Get-VMHost | Sort-Object Name
+$Output = @()
+$KnownVibs = @("qfle3f", "qedi", "qedf", "sfvmk", "igbn", "ixgben", "i40en" ,"ntel-nvme", "hiodriver" ,
+"hinic", "native-shannon", "iomemory-vsl4", "scsi-celerity16fc", "cxl", "ftsys-msgpt3", "ftsys-qlnativefc", "liquidio","lpnic" ,"smartpqi" ) # Replace this with the actual list of VIBs from KB78389
+
+Foreach ($HostOne in $Hosts) {
+  $esxcli = $HostOne | get-esxcli -v2
+  
+  $Vibs  =  $esxcli.software.vib.list.Invoke() |  Select Name,Version,Vendor,CreeationDate
+  Foreach ($Vib in $Vibs) {
+     if($KnownVibs -contains $Vib.Name){  
+      $Output += New-Object PSObject -Property @{
+      HostName = $HostOne.Name   
+      Name = $Vib.Name  
+      Version = $Vib.Version
+      Vendor = $Vib.Vendor
+      CreeationDate = $Vib.CreeationDate
+     }
+    }
+  }
+
+
+
+    write-host "작업중인 호스트:" $HostOne.Name -ForegroundColor yellow;
+  }
+ write-host "작업끝~ 코뿔소는 소인가?"
+$Output | Select-Object Hostname,Name,Version,Vendor | Export-Csv -Path "C:\Users\ekzmd\Desktop\Test\ScriptTest\vib_version_test7.csv" -NoTypeInformation
+
+

@@ -1,0 +1,129 @@
+﻿ ##Center 연결
+Connect-VIServer -Server 172.16.11.15 -User administrator@vsphere.local -Password VMware1!
+$FAB_Name = "testServer"
+##클러스터 Sort.
+#$Cluster = Get-Cluster -name "Coin-01" | Sort-Object "Name"
+#전체 뽑기
+$Cluster = Get-Cluster | Sort-Object "Name"
+
+foreach($ClusterOne in $Cluster){
+$VMHosts = Get-VMHost | Sort-Object "Name" | Get-VMHost | Sort-Object "name"
+
+$results = @()
+   foreach ($VMHost in $VMHosts){
+    Write-Host $VMHost.name "=" $VMHost.ConnectionState  -ForegroundColor yellow
+    ##호스트 상태가  "응답없음 일때
+    if($VMHost.ConnectionState -eq "NotResponding"){
+            $VMHostNetworkAdapters = Get-VMHost $VMHost | Get-VMHostNetworkAdapter | Where-Object { $_.Name -like "vmnic*" }
+            $VMHostHBAS = Get-VMHost $VMHost | Get-VMHostHBA -Type block
+            $VMHostHbaFC = Get-VMHost $VMHost | Get-VMHostHBA -Type FibreChannel
+            $esxcli = Get-VMHost $VMHost | Get-EsxCli
+          
+            $arrNicDetail = @()
+            foreach ($VMNic in $VMHostNetworkAdapters)
+            {
+                $objOneNic = New-Object System.Object
+                $objDriverInfo = ($esxcli.network.nic.get($VMNic.Name)).DriverInfo
+                $objOneNic | Add-Member -type NoteProperty -name Host_Name -Value $VMHost.Name
+                $objOneNic | Add-Member -type NoteProperty -name Componet_Name -Value $VMNic.Name
+                $arrNicDetail += $objOneNic
+            }
+            $arrHBADetail = @()
+            foreach ($VMHBA in $VMHostHBAS)
+            {
+                    $objOnehba = New-Object System.Object
+                    $objDriverInfo = $esxcli.storage.san.sas.list()| Where-Object { $_.DeviceName -like $VMHBA.Device }      
+                    $objOnehba | Add-Member -type NoteProperty -name Host_Name -Value $VMHost.Name                
+                    $objOnehba | Add-Member -type NoteProperty -name Componet_Name -Value $VMHBA.Device
+                    $arrHBADetail += $objOnehba
+            }
+            $arrHBAFCDetail = @()
+            foreach ($VMFcHba in $ $VMHostHbaFC )
+            {
+                    $objOneFchba = New-Object System.Object
+                    $objDriverInfo = $esxcli.storage.san.fc.list()| Where-Object { $_.Adapter -like $VMFcHba.Device }
+                    $objOneFchba  | Add-Member -type NoteProperty -name Host_Name -Value $VMHost.Name
+                    $objOneFchba  | Add-Member -type NoteProperty -name Componet_Name -Value $$VMFcHba.Device
+                    $arrHBAFCDetail += $objOneFchba
+            }
+            $results += $arrHBADetail  +  $arrHBAFCDetail + $arrNicDetail    
+     }
+     else{
+            ##호스트 상태가 정상일때
+            #Get list of network interfaces on host
+            $VMHostNetworkAdapters = Get-VMHost $VMHost | Get-VMHostNetworkAdapter | Where-Object { $_.Name -like "vmnic*" }
+            $VMHostHBAS = Get-VMHost $VMHost | Get-VMHostHBA -Type block
+            $VMHostHBAFC = Get-VMHost $VMHost | Get-VMHostHBA -Type FibreChannel
+            $esxcli = Get-VMHost $VMHost | Get-EsxCli
+  
+            $arrNicDetail = @()
+            foreach ($VMNic in $VMHostNetworkAdapters){
+                $objOneNic = New-Object System.Object
+                $objDriverInfo = ($esxcli.network.nic.get($VMNic.Name)).DriverInfo
+                $nicPCIinfo = $esxcli.hardware.pci.list() | where {$_.VMkernelName -eq $VMNic.Name}
+
+                $objOneNic | Add-Member -type NoteProperty -name Host_Name -Value $VMHost.Name                    
+                $objOneNic | Add-Member -type NoteProperty -name Version -Value $VMHost.Version   
+                $objOneNic | Add-Member -type NoteProperty -name Build -Value $VMHost.Build           
+                $objOneNic | Add-Member -type NoteProperty -name Manufacturer -Value $VMHost.Manufacturer    
+                $objOneNic | Add-Member -type NoteProperty -name Model -Value $VMHost.Model    
+                $objOneNic | Add-Member -type NoteProperty -name LicenseKey -Value $VMHost.LicenseKey   
+                $objOneNic | Add-Member -type NoteProperty -name Componet_Name -Value $VMNic.Name
+                $objOneNic | Add-Member -type NoteProperty -name DriverName -Value $objDriverInfo.Driver
+                $objOneNic | Add-Member -type NoteProperty -name DriverVersion -Value $objDriverInfo.Version
+                $objOneNic | Add-Member -type NoteProperty -name FirmwareVersion -Value $objDriverInfo.FirmwareVersion
+                $arrNicDetail += $objOneNic
+            }
+          
+            ##RaidController 리스트 뽑기
+            $arrHBADetail = @()
+            foreach ($VMHBA in $VMHostHBAS)
+            {
+                $objOnehba = New-Object System.Object
+                $objDriverInfo = $esxcli.storage.san.sas.list()| Where-Object { $_.DeviceName -like $VMHBA.Device }
+                $RaidPCIinfo = $esxcli.hardware.pci.list() | where {$_.VMKernelName -like "vmhba*"  -AND $_.DeviceClassName -like "RAID bus controller"}
+
+                $objOnehba | Add-Member -type NoteProperty -name Host_Name -Value $VMHost.Name     
+                $objOnehba   | Add-Member -type NoteProperty -name Version -Value $VMHost.Version  
+                $objOnehba  | Add-Member -type NoteProperty -name Build -Value $VMHost.Build            
+                $objOnehba  | Add-Member -type NoteProperty -name Manufacturer -Value $VMHost.Manufacturer   
+                $objOnehba  | Add-Member -type NoteProperty -name Model -Value $VMHost.Model -Force    
+                $objOnehba  | Add-Member -type NoteProperty -name LicenseKey -Value $VMHost.LicenseKey               
+                $objOnehba | Add-Member -type NoteProperty -name Componet_Name -Value $VMHBA.Device
+                $objOnehba | Add-Member -type NoteProperty -name DriverName -Value $objDriverInfo.DriverName
+                $objOnehba | Add-Member -type NoteProperty -name DriverVersion -Value $objDriverInfo.DriverVersion             
+                $objOnehba | Add-Member -type NoteProperty -name FirmwareVersion -Value $objDriverInfo.FirmwareVersion
+                $arrHBADetail += $objOnehba
+            }
+            ##FC hba 리스트 뽑기
+            $arrHBAFCDetail = @()
+            foreach ($VMFcHba in $VMHostHbaFC)
+            {
+               
+                $objOneFchba = New-Object System.Object
+                $objDriverInfo = $esxcli.storage.san.fc.list()| Where-Object { $_.Adapter -like $VMFcHba.Device }
+                $FcPCIinfo = $esxcli.hardware.pci.list() | where {$_.VMKernelName -like "vmhba*"  -AND $_.DeviceClassName -like "FC controller"} 
+
+                $objOneFchba | Add-Member -type NoteProperty -name Host_Name -Value $VMHost.Name      
+                $objOneFchba | Add-Member -type NoteProperty -name Version -Value $VMHost.Version   
+                $objOneFchba | Add-Member -type NoteProperty -name Build -Value $VMHost.Build          
+                $objOneFchba | Add-Member -type NoteProperty -name Manufacturer -Value $VMHost.Manufacturer   
+                $objOneFchba | Add-Member -type NoteProperty -name Model -Value $VMHost.Model     
+                $objOneFchba | Add-Member -type NoteProperty -name LicenseKey -Value $VMHost.LicenseKey       
+                $objOneFchba | Add-Member -type NoteProperty -name Componet_Name -Value $VMFcHba.Device
+                $objOneFchba | Add-Member -type NoteProperty -name DriverName -Value $objDriverInfo.DriverName
+                $objOneFchba | Add-Member -type NoteProperty -name DriverVersion -Value $objDriverInfo.DriverVersion
+                $objOneFchba | Add-Member -type NoteProperty -name FirmwareVersion -Value $objDriverInfo.FirmwareVersion
+                $arrHBAFCDetail += $objOneFchba
+            }
+              Write-Host $VMHostNetworkAdapters
+              Write-Host $VMHostHBAS
+              Write-Host $VMHostHbaFC
+              $results += $arrHBADetail +  $arrHBAFCDetail + $arrNicDetail
+        }
+      }
+   }
+   $results  | export-csv -path C:\Users\ekzmd\Desktop\Test\ScriptTest\test.csv
+   Write-Host "firm_Dirver_작업완료" -ForegroundColor green
+ 
+ 
